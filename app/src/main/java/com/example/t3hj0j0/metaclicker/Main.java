@@ -2,6 +2,7 @@ package com.example.t3hj0j0.metaclicker;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.media.MediaPlayer;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.Choreographer;
@@ -20,7 +21,6 @@ public class Main extends AppCompatActivity implements Choreographer.FrameCallba
     @BindView(R.id.ad_time) TextView ad_time;
     @BindView(R.id.money_view) TextView money_view;
     private int clicks;
-    private int money;
     private Choreographer choreographer;
     private long lastTimeCheck;
     SharedPreferences sharedPref;
@@ -28,15 +28,17 @@ public class Main extends AppCompatActivity implements Choreographer.FrameCallba
     playerStats playerstats;
     clickAd currentAd;
     int adTime;
+    int autoUpgradeCost;
+    int clickUpgradeCost;
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
-        sharedPref = getSharedPreferences("PLAYER_STATS", Context.MODE_PRIVATE);
-        prefEditor = sharedPref.edit();
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
-        this.click_counter = findViewById(R.id.click_counter);
+        sharedPref = getSharedPreferences("PLAYER_STATS", Context.MODE_PRIVATE);
+        prefEditor = sharedPref.edit();
         if (sharedPref.getInt("PLAYED_BEFORE",0) == 0)
         {
             clicks = 0;
@@ -45,7 +47,6 @@ public class Main extends AppCompatActivity implements Choreographer.FrameCallba
             prefEditor.putInt("MONEY",0);
             prefEditor.putInt("AD_LEVEL",1);
             prefEditor.putInt("AUTOCLICKER_TOTAL",0);
-            prefEditor.putInt("AUTOCLICKER_UPGRADES",0);
             prefEditor.putInt("CLICKER_UPGRADES",1);
             prefEditor.putInt("CLICKER_UPGRADES_UNLOCKED",0);
             prefEditor.putInt("ASCENSION_UNLOCKED",0);
@@ -57,27 +58,29 @@ public class Main extends AppCompatActivity implements Choreographer.FrameCallba
             this.clicks = sharedPref.getInt("TOTAL_CLICKS", -1);
             click_counter.setText(getClicks()+" clicks");
             this.clicks = sharedPref.getInt("MONEY", -1);
-            money_view.setText(getClicks()+" generic currency");
         }
         playerstats = new playerStats(sharedPref);
         currentAd = new clickAd(playerstats.getAD_LEVEL());
+        autoUpgradeCost = 15+playerstats.getAUTOCLICKER_TOTAL()+((int)Math.pow(playerstats.getAUTOCLICKER_TOTAL(),2)-(int)(playerstats.getAUTOCLICKER_TOTAL()*.5));
+        clickUpgradeCost = 2+playerstats.getAUTOCLICKER_TOTAL()+((int)Math.pow(playerstats.getAUTOCLICKER_TOTAL(),2)-(int)(playerstats.getAUTOCLICKER_TOTAL()*.5));
+        auto_clicker_upgrade.setText(autoUpgradeCost+"");
+        clicker_upgrade.setText(clickUpgradeCost+"");
         adTime = 30;
-        ad_time.setText(adTime+"");
+        ad_health.setText(currentAd.getAdHealth() + "");
+        money_view.setText(playerstats.getMONEY() + " generic currency units");
+        ad_time.setText(adTime+" seconds");
         lastTimeCheck = System.currentTimeMillis();
         choreographer = Choreographer.getInstance();
         choreographer.postFrameCallback(this);
     }
+
     @Override
     public void doFrame(long l)
     {
         if (System.currentTimeMillis() - lastTimeCheck >= 1000)
         {
-
+            autoClick();
             lastTimeCheck = System.currentTimeMillis();
-            clicks++;
-            click_counter.setText(getClicks()+" clicks");
-            prefEditor.putInt("TOTAL_CLICKS",clicks);
-            prefEditor.apply();
             adTime--;
             if (adTime <= 0)
             {
@@ -95,28 +98,99 @@ public class Main extends AppCompatActivity implements Choreographer.FrameCallba
     }
     public void click(android.view.View view)
     {
-        this.clicks++;
+        clicks+= playerstats.getCLICKER_UPGRADES();
+
         click_counter.setText(getClicks()+" clicks");
         prefEditor.putInt("TOTAL_CLICKS",clicks);
         prefEditor.apply();
+
+        currentAd.setAdHealth(currentAd.getAdHealth() - playerstats.getCLICKER_UPGRADES());
+        ad_health.setText(currentAd.getAdHealth()+"");
+
+        deathCheck();
+    }
+    public void autoClick()
+    {
+        clicks+= playerstats.getAUTOCLICKER_TOTAL();
+
+        click_counter.setText(getClicks()+" clicks");
+        prefEditor.putInt("TOTAL_CLICKS",clicks);
+        prefEditor.apply();
+
+        currentAd.setAdHealth(currentAd.getAdHealth() - playerstats.getAUTOCLICKER_TOTAL());
+        ad_health.setText(currentAd.getAdHealth()+"");
+
+        deathCheck();
+    }
+    public void deathCheck()
+    {
+        if (currentAd.getAdHealth() <= 0)
+        {
+            adTime = 30;
+            ad_time.setText(adTime+"");
+
+            prefEditor.putInt("AD_LEVEL",playerstats.getAD_LEVEL()+1);
+            prefEditor.putInt("MONEY",playerstats.getMONEY()+currentAd.getAdWorth());
+            prefEditor.apply();
+
+            playerstats.levelUp();
+            currentAd = new clickAd(playerstats.getAD_LEVEL());
+            ad_health.setText(currentAd.getAdHealth()+"");
+            playerstats.setMONEY(sharedPref.getInt("MONEY",-1));
+            money_view.setText(playerstats.getMONEY() + " generic currency units");
+        }
     }
     public void reset(android.view.View view)
     {
         prefEditor.putInt("PLAYED_BEFORE",1);
         prefEditor.putInt("TOTAL_CLICKS",0);
-
+        prefEditor.putInt("MONEY",0);
         prefEditor.putInt("AD_LEVEL",1);
         prefEditor.putInt("AUTOCLICKER_TOTAL",0);
-        prefEditor.putInt("AUTOCLICKER_UPGRADES",0);
         prefEditor.putInt("CLICKER_UPGRADES",1);
-        prefEditor.putInt("CLICKER_UPGRADES_UNLOCKED",0);
         prefEditor.putInt("ASCENSION_UNLOCKED",0);
         prefEditor.putInt("ASCENSION_LEVEL",1);
+        prefEditor.apply();
         clicks = 0;
         click_counter.setText(getClicks()+" clicks");
+        playerstats = new playerStats(sharedPref);
+        currentAd = new clickAd(playerstats.getAD_LEVEL());
+        autoUpgradeCost = 15+playerstats.getAUTOCLICKER_TOTAL()+((int)Math.pow(playerstats.getAUTOCLICKER_TOTAL(),2)-(int)(playerstats.getAUTOCLICKER_TOTAL()*.5));
+        clickUpgradeCost = 2+playerstats.getAUTOCLICKER_TOTAL()+((int)Math.pow(playerstats.getAUTOCLICKER_TOTAL(),2)-(int)(playerstats.getAUTOCLICKER_TOTAL()*.5));
+        auto_clicker_upgrade.setText(autoUpgradeCost+"");
+        clicker_upgrade.setText(clickUpgradeCost+"");
+        adTime = 30;
+        ad_health.setText(currentAd.getAdHealth() + "");
+        money_view.setText(playerstats.getMONEY() + " generic currency units");
+        ad_time.setText(adTime+" seconds");
+        lastTimeCheck = System.currentTimeMillis();
     }
-    public int getAutoClickerPower()
+    public void upgradeAutoClicker(android.view.View view)
     {
-        return playerstats.getAUTOCLICKER_TOTAL();
+        if (playerstats.getMONEY() >= autoUpgradeCost)
+        {
+            prefEditor.putInt("AUTOCLICKER_TOTAL",playerstats.getAUTOCLICKER_TOTAL()+1);
+            prefEditor.putInt("MONEY",playerstats.getMONEY()-autoUpgradeCost);
+            prefEditor.apply();
+            playerstats.setMONEY(sharedPref.getInt("MONEY",0));
+            playerstats.setAUTOCLICKER_TOTAL(sharedPref.getInt("AUTOCLICKER_TOTAL",0));
+            autoUpgradeCost = playerstats.getAUTOCLICKER_TOTAL()+((int)Math.pow(playerstats.getAUTOCLICKER_TOTAL(),2)-(int)(playerstats.getAUTOCLICKER_TOTAL()*.5));
+            auto_clicker_upgrade.setText(autoUpgradeCost+"");
+            money_view.setText(playerstats.getMONEY() + " generic currency units");
+        }
+    }
+    public void upgradeClicker(android.view.View view)
+    {
+        if (playerstats.getMONEY() >= clickUpgradeCost)
+        {
+            prefEditor.putInt("CLICKER_UPGRADES",playerstats.getCLICKER_UPGRADES()+1);
+            prefEditor.putInt("MONEY",playerstats.getMONEY()-clickUpgradeCost);
+            prefEditor.apply();
+            playerstats.setMONEY(sharedPref.getInt("MONEY",0));
+            playerstats.setCLICKER_UPGRADES(sharedPref.getInt("CLICKER_UPGRADES",0));
+            clickUpgradeCost = playerstats.getCLICKER_UPGRADES()+((int)Math.pow(playerstats.getCLICKER_UPGRADES(),2)-(int)(playerstats.getCLICKER_UPGRADES()*.5));
+            clicker_upgrade.setText(clickUpgradeCost+"");
+            money_view.setText(playerstats.getMONEY() + " generic currency units");
+        }
     }
 }
